@@ -70,6 +70,8 @@ pub fn read_with_skip(
     let mut report = IoReport::default();
 
     if let Some(seekable) = file.as_seek_mut() {
+        let seekable: &mut dyn std::io::Seek = seekable;
+
         let mut skip: u64 = skip;
         while skip > 0 {
             let offset = i64::try_from(skip).unwrap_or(i64::MAX);
