@@ -24,6 +24,7 @@ impl<T: ?Sized + Interface> SansIO<T> {
     pub fn step(this: Pin<&mut Self>, buffers: Buffers<'_>) -> Demand {
         let mut pass_buffers = UnsafeWaker {
             ctx: Cell::default(),
+            spin: 1,
         };
 
         let inner = &mut unsafe { this.get_unchecked_mut() }.inner;
@@ -75,29 +76,28 @@ where
 }
 
 pub struct IoFuture {
+    // FIXME: this must be `core::pin::UnsafePinned`! Otherwise each await on the future (which
+    // gets the exact argument Pin<&mut Self>) will retag all of its attributes as unique. That is
+    // we couldn't share a pointer to the attributes outside, that pointer is invalided immediately
+    // on awaiting.
     ctx: UnsafeCell<CommunicateWithWaker>,
 }
+
+pub struct GetBuffers<'lt>(Pin<&'lt mut IoFuture>);
 
 #[derive(Default)]
 struct CommunicateWithWaker {
     // Set by the waker while polling.
     buffers: Option<IoBuffers>,
+    // The buffers are valid while our spin equals the waker's.
+    spin: u64,
     // Set by us to signal the waker what the environment must do.
     demand: Demand,
 }
 
 impl IoFuture {
-    pub fn get<'a>(this: Pin<&'a mut Self>) -> Option<Buffers<'a>> {
-        let set_by_outside = unsafe { this.get_unchecked_mut() }
-            .ctx
-            .get_mut()
-            .buffers
-            .as_mut()?;
-
-        Some(Buffers {
-            input: unsafe { set_by_outside.input.as_ref() },
-            output: unsafe { set_by_outside.output.as_mut() },
-        })
+    pub fn get(self: Pin<&mut Self>) -> GetBuffers<'_> {
+        GetBuffers(self)
     }
 
     pub fn consume(mut this: Pin<&mut Self>, many: usize) -> Pin<&mut Self> {
@@ -126,54 +126,69 @@ struct UnsafeWaker {
     // Yes, this is not `Sync`. But we can not clone the waker at *all* and in particular only pass
     // a reference to the actual waker when polling the future.
     ctx: Cell<Option<BufferPtr>>,
+    spin: u64,
 }
 
-type BufferPtr = NonNull<CommunicateWithWaker>;
+type BufferPtr = NonNull<UnsafeCell<CommunicateWithWaker>>;
 
 impl Future for IoFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let waker = cx.waker();
-
-        assert!(
-            waker.vtable() == UnsafeWaker::VTABLE,
-            "This future must only be polled with the internal waker of `SansIO`"
-        );
-
-        let data = waker.data();
-        // Safety: `IoBuffers` must only be polled via an `UnsafeWaker`.
-        let waker = unsafe { &mut *(data as *mut UnsafeWaker) };
-        let this = unsafe { self.get_unchecked_mut() };
+        let waker = UnsafeWaker::from_context(cx);
+        let this = Pin::get_ref(self.as_ref());
 
         {
-            let comm = NonNull::new(this.ctx.get()).unwrap();
+            let comm = NonNull::from(&this.ctx);
             let registered = waker.ctx.get();
 
             assert!(
-                registered.map_or(true, |b| b.as_ptr() == comm.as_ptr()),
+                registered.map_or(true, |b| b.as_ptr().addr() == comm.as_ptr().addr()),
                 "You must not use a different io buffers"
             );
 
             // Safety: we are pinned. This being our special waker means we are being polled by
-            // the library itself.
-            if registered.is_none() {
-                waker.ctx.set(Some(comm));
-            }
+            // the library itself. We always share the latest pointer to ourselves even tough it's
+            // address is equal to what we already have. The reason for this is provenance. When we
+            // yield the caller should be able to await.
+            waker.ctx.set(Some(comm));
         }
 
-        match this.ctx.get_mut().buffers {
+        let ctx = unsafe { &*this.ctx.get() };
+        match ctx.buffers {
             Some(_) => {
-                if let Demand::None = this.ctx.get_mut().demand {
+                if let Demand::None = ctx.demand {
                     Poll::Ready(())
                 } else {
                     Poll::Pending
                 }
             }
-            None => {
-                Poll::Pending
-            }
+            None => Poll::Pending,
         }
+    }
+}
+
+impl<'lt> Future for GetBuffers<'lt> {
+    type Output = Option<Buffers<'lt>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let waker = UnsafeWaker::from_context(cx);
+
+        let set_by_outside = &self.as_ref().0.ctx;
+        let comm = unsafe { &mut *set_by_outside.get() };
+        let Some(set_by_outside) = comm.buffers.as_mut() else {
+            return Poll::Ready(None);
+        };
+
+        if waker.spin != comm.spin {
+            return Poll::Ready(None);
+        }
+
+        // Always ready. We just do this to validate the buffers with the context.
+        Poll::Ready(Some(Buffers {
+            input: unsafe { set_by_outside.input.as_ref() },
+            output: unsafe { set_by_outside.output.as_mut() },
+        }))
     }
 }
 
@@ -206,15 +221,15 @@ impl UnsafeWaker {
         //   - clone creates a waker waking the same task (always the future inside `SansIO`).
         //   - wake, wake_by_ref, drop all do the right thing.
         //   - drop in particular is trivial as we do not have drop glue.
-        unsafe { Waker::from_raw(RawWaker::new(self as *const _ as *const (), Self::VTABLE)) }
+        unsafe { Waker::from_raw(RawWaker::new(self as *mut _ as *const (), Self::VTABLE)) }
     }
 
     fn take_demand(&mut self) -> Demand {
         match self.ctx.get() {
             // No buffer registered itself.. yet.
             None => Demand::None,
-            Some(mut comm) => {
-                let comm = unsafe { comm.as_mut() };
+            Some(comm) => {
+                let comm = unsafe { &mut *(comm.as_ref().get()) };
                 core::mem::take(&mut comm.demand)
             }
         }
@@ -229,9 +244,10 @@ impl UnsafeWaker {
         match self.ctx.get() {
             // No buffer registered itself.. yet. so nothing is waiting on these.
             None => {}
-            Some(mut comm) => {
-                let comm = unsafe { comm.as_mut() };
+            Some(comm) => {
+                let comm = unsafe { &mut *(comm.as_ref().get()) };
                 comm.buffers = Some(buffers);
+                comm.spin = self.spin;
             }
         };
 
@@ -242,12 +258,31 @@ impl UnsafeWaker {
 
         // This is a little bit early to remove the buffers, if we do not have a demand they can be
         // re-used. But that is a few instructions which isn't really important.
-        if let Some(mut comm) = self.ctx.get() {
-            let comm = unsafe { comm.as_mut() };
-            comm.buffers = None;
-        }
+        //
+        // We _must not_ use the pointer at this point. The coroutine has yielded but here we can
+        // not be sure it did so through awaiting on our pin. It could have internally ran
+        // `Pin::as_mut` or similar which retags all the IoFuture attributes as unique. That
+        // includes invalidating the pointer that the future shared to us!
+        //
+        // Nevertheless we must invalidate the buffers. More specifically the pointers must not be
+        // dereferenced after we return from this function. To do both, we require that access to
+        // the buffers *also* gets a reference to the Waker and then do a counting scheme.
+        self.spin += 1;
 
         result
+    }
+
+    fn from_context<'a>(cx: &'a mut Context) -> &'a mut Self {
+        let waker = cx.waker();
+
+        assert!(
+            waker.vtable() == UnsafeWaker::VTABLE,
+            "This future must only be polled with the internal waker of `SansIO`"
+        );
+
+        let data = waker.data();
+        // Safety: `IoBuffers` must only be polled via an `UnsafeWaker`.
+        unsafe { &mut *(data as *mut UnsafeWaker) }
     }
 }
 

@@ -6,7 +6,7 @@ fn decapitalize() {
         let mut io_future = core::pin::pin!(io_future);
         io_future.as_mut().await;
 
-        while let Some(buffers) = IoFuture::get(io_future.as_mut()) {
+        while let Some(buffers) = io_future.as_mut().get().await {
             if buffers.input.is_empty() {
                 break;
             }
