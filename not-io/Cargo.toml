@@ -1,0 +1,31 @@
+[package]
+name = "not-io"
+description = "A synthesis between no-std, no-alloc and std::io"
+version = "0.1.0-alpha"
+authors = ["Andreas Molzer <andreas.molzer@gmx.de>"]
+edition = "2021"
+rust-version = "1.56"
+license = "MIT OR Apache-2.0"
+categories = ["embedded", "no-std"]
+
+[dependencies]
+# None
+
+[features]
+# Explicit: you have to select everything yourself.
+default = []
+# Enable alloc dependency and some impls that depend on it.
+alloc = []
+# Enable std dependency compatibility.
+std = ["alloc"]
+
+[[test]]
+name = "no_alloc"
+
+[[test]]
+name = "no_std"
+required-features = ["alloc"]
+
+[[test]]
+name = "with_std"
+required-features = ["std"]
