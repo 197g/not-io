@@ -27,16 +27,38 @@ impl<T: ?Sized + Interface> SansIO<T> {
             state: RefCell::default(),
         };
 
+        // We can *not* demand the underlying future to be Unpin, that contradicts the design of
+        // IoFuture that already requires to be pinned. So any coroutine using it will also be. We
+        // do not want everybody to pin this manually.
         let inner = &mut unsafe { this.get_unchecked_mut() }.inner;
         let inner = unsafe { Pin::new_unchecked(inner) };
 
         T::step(inner, &mut pass_buffers, buffers)
     }
 
-    pub fn with_io<I: ?Sized + std::io::Read, O: ?Sized + std::io::Write>(
-        mut this: Pin<&mut Self>,
-        input: &mut std::io::BufReader<I>,
-        output: &mut O,
+    /// Consume the sized transformer.
+    ///
+    /// This pins it internally.
+    pub fn with_io(
+        mut self,
+        input: &mut std::io::BufReader<dyn std::io::Read>,
+        output: &mut dyn std::io::Write,
+        obuf: &mut [u8],
+    ) -> std::io::Result<()>
+    where
+        Self: Sized,
+    {
+        let this = core::pin::pin!(self);
+        this.with_io_pinned(input, output, obuf)
+    }
+
+    /// Like [`Self::with_io`] that requires to be pinned, but also runs on unsized transformers.
+    ///
+    /// This way you can call it for `SansIO<dyn Future<Output = ()>>`.
+    pub fn with_io_pinned(
+        mut self: Pin<&mut Self>,
+        input: &mut std::io::BufReader<dyn std::io::Read>,
+        output: &mut dyn std::io::Write,
         obuf: &mut [u8],
     ) -> std::io::Result<()> {
         use std::io::BufRead;
@@ -47,7 +69,7 @@ impl<T: ?Sized + Interface> SansIO<T> {
                 output: obuf,
             };
 
-            match SansIO::step(this.as_mut(), buffers) {
+            match SansIO::step(self.as_mut(), buffers) {
                 Demand::None => return Ok(()),
                 Demand::Consume(many) => {
                     input.consume(many);
@@ -306,7 +328,7 @@ mod sealed {
         ) -> Demand;
     }
 
-    impl<F: Future<Output = ()>> Sealed for F {
+    impl<F: Future<Output = ()> + ?Sized> Sealed for F {
         type Repr = F;
 
         #[expect(private_interfaces)]

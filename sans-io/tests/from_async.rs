@@ -1,8 +1,8 @@
-use sans_io::{IoFuture, SansIO, from_async};
+use sans_io::{IoFuture, from_async};
 
 #[test]
 fn decapitalize() {
-    let mut transformer = from_async(|io_future: IoFuture| async move {
+    let transformer = from_async(|io_future: IoFuture| async move {
         let mut io_future = core::pin::pin!(io_future);
         io_future.as_mut().await;
 
@@ -31,11 +31,12 @@ fn decapitalize() {
         }
     });
 
-    let mut transformer = core::pin::pin!(transformer);
     let mut input = std::io::BufReader::new(std::io::Cursor::new(b"Hello, World!"));
     let mut obuf = vec![0; 4096];
     let mut output = vec![];
 
-    SansIO::with_io(transformer.as_mut(), &mut input, &mut output, &mut obuf[..]).unwrap();
+    transformer
+        .with_io(&mut input, &mut output, &mut obuf[..])
+        .unwrap();
     assert_eq!(output, b"hello, world!");
 }
