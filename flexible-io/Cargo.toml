@@ -5,7 +5,7 @@ version = "0.4.0"
 description = "Wraps values such that dyn-safe IO traits need not appear as static bounds"
 
 license = "EUPL-1.2"
-authors = ["Andreas Molzer"]
+authors = ["Aurelia Molzer"]
 categories = []
 repository = "https://github.com/HeroicKatora/not-io"
 readme = "Readme.md"
