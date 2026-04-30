@@ -48,31 +48,16 @@ use std::{
 /// let contents: &Vec<u8> = writer.get_ref().get_ref();
 /// assert_eq!(contents, b"Hello, world!");
 /// ```
-pub struct Writer<W> {
-    inner: W,
+pub struct Writer<W: ?Sized> {
     write: *mut dyn Write,
     vtable: OptTable,
+    inner: W,
 }
 
 #[derive(Clone, Copy)]
 struct OptTable {
     seek: Option<*mut dyn Seek>,
     any: Option<*mut dyn Any>,
-}
-
-/// A mutable reference to a [`Writer`].
-///
-/// This type acts similar to a *very* fat mutable reference. It can be obtained by constructing a
-/// concrete reader type and calling [`Writer::as_mut`].
-///
-/// Note: Any mutable reference to a `Writer` implements `Into<WriterMut>` for its lifetime. Use this
-/// instead of coercion which would be available if this was a builtin kind of reference.
-///
-/// Note: Any `Writer` implements `Into<WriterBox>`, which can again be converted to `WriterMut`.
-/// Use it for owning a writer without its specific type similar to `Box<dyn Read>`.
-pub struct WriterMut<'lt> {
-    inner: &'lt mut dyn Write,
-    vtable: OptTable,
 }
 
 /// A box around a type-erased [`Writer`].
@@ -97,7 +82,7 @@ impl<W: Write> Writer<W> {
     }
 }
 
-impl<W> Writer<W> {
+impl<W: ?Sized> Writer<W> {
     /// Provide access to the underlying writer.
     pub fn get_ref(&self) -> &W {
         &self.inner
@@ -135,7 +120,7 @@ impl<W> Writer<W> {
     /// except it doesn't offer access with the underlying reader's type itself.
     pub fn into_boxed<'lt>(self) -> WriterBox<'lt>
     where
-        W: 'lt,
+        W: Sized + 'lt,
     {
         let Writer {
             inner,
@@ -155,7 +140,7 @@ impl<W> Writer<W> {
     /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
     pub fn set_seek(&mut self)
     where
-        W: Seek,
+        W: Sized + Seek,
     {
         self.vtable.seek = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Seek));
     }
@@ -165,13 +150,13 @@ impl<W> Writer<W> {
     /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
     pub fn set_any(&mut self)
     where
-        W: Any,
+        W: Sized + Any,
     {
         self.vtable.any = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Any));
     }
 }
 
-impl<W> Writer<W> {
+impl<W: ?Sized> Writer<W> {
     /// Get the inner value as a dynamic `Write` reference.
     pub fn as_write(&self) -> &(dyn Write + '_) {
         let ptr = &self.inner as *const W;
@@ -221,9 +206,27 @@ impl<W> Writer<W> {
     }
 
     /// Unwrap the inner value at its original sized type.
-    pub fn into_inner(self) -> W {
+    pub fn into_inner(self) -> W
+    where
+        W: Sized,
+    {
         self.inner
     }
+}
+
+/// A mutable reference to a [`Writer`].
+///
+/// This type acts similar to a *very* fat mutable reference. It can be obtained by constructing a
+/// concrete reader type and calling [`Writer::as_mut`].
+///
+/// Note: Any mutable reference to a `Writer` implements `Into<WriterMut>` for its lifetime. Use this
+/// instead of coercion which would be available if this was a builtin kind of reference.
+///
+/// Note: Any `Writer` implements `Into<WriterBox>`, which can again be converted to `WriterMut`.
+/// Use it for owning a writer without its specific type similar to `Box<dyn Read>`.
+pub struct WriterMut<'lt> {
+    inner: &'lt mut dyn Write,
+    vtable: OptTable,
 }
 
 impl WriterMut<'_> {
