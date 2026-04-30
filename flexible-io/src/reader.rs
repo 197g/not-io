@@ -41,10 +41,10 @@ use std::{
 /// buffered.consume(7);
 /// assert_eq!(buffered.fill_buf().unwrap(), b"world!");
 /// ```
-pub struct Reader<R> {
-    inner: R,
+pub struct Reader<R: ?Sized> {
     read: *mut dyn Read,
     vtable: OptTable,
+    inner: R,
 }
 
 #[derive(Clone, Copy)]
@@ -52,21 +52,6 @@ struct OptTable {
     seek: Option<*mut dyn Seek>,
     buf: Option<*mut dyn BufRead>,
     any: Option<*mut dyn Any>,
-}
-
-/// A mutable reference to a [`Reader`].
-///
-/// This type acts similar to a *very* fat mutable reference. It can be obtained by constructing a
-/// concrete reader type and calling [`Reader::as_mut`].
-///
-/// Note: Any mutable reference to a `Reader` implements `Into<ReaderMut>` for its lifetime. Use
-/// this instead of coercion which would be available if this was a builtin kind of reference.
-///
-/// Note: Any `Reader` implements `Into<ReaderBox>`, which can again be converted to [`ReaderMut`].
-/// Use it for owning a writer without its specific type similar to `Box<dyn Write>`.
-pub struct ReaderMut<'lt> {
-    inner: &'lt mut dyn Read,
-    vtable: OptTable,
 }
 
 /// A box around a type-erased [`Reader`].
@@ -92,7 +77,7 @@ impl<R: Read> Reader<R> {
     }
 }
 
-impl<R> Reader<R> {
+impl<R: ?Sized> Reader<R> {
     /// Provide access to the underlying reader.
     pub fn get_ref(&self) -> &R {
         &self.inner
@@ -130,7 +115,7 @@ impl<R> Reader<R> {
     /// except it doesn't offer access with the underlying reader's type itself.
     pub fn into_boxed<'lt>(self) -> ReaderBox<'lt>
     where
-        R: 'lt,
+        R: Sized + 'lt,
     {
         let Reader {
             inner,
@@ -150,7 +135,7 @@ impl<R> Reader<R> {
     /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
     pub fn set_buf(&mut self)
     where
-        R: BufRead,
+        R: Sized + BufRead,
     {
         self.vtable.buf = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as BufRead));
     }
@@ -160,7 +145,7 @@ impl<R> Reader<R> {
     /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
     pub fn set_seek(&mut self)
     where
-        R: Seek,
+        R: Sized + Seek,
     {
         self.vtable.seek = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Seek));
     }
@@ -170,13 +155,13 @@ impl<R> Reader<R> {
     /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
     pub fn set_any(&mut self)
     where
-        R: Any,
+        R: Sized + Any,
     {
         self.vtable.any = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Any));
     }
 }
 
-impl<R> Reader<R> {
+impl<R: ?Sized> Reader<R> {
     /// Get the inner value as a dynamic `Read` reference.
     pub fn as_read(&self) -> &(dyn Read + '_) {
         let ptr = &self.inner as *const R;
@@ -246,9 +231,45 @@ impl<R> Reader<R> {
     }
 
     /// Unwrap the inner value at its original sized type.
-    pub fn into_inner(self) -> R {
+    pub fn into_inner(self) -> R
+    where
+        R: Sized,
+    {
         self.inner
     }
+}
+
+impl<R: Read> Read for Reader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        self.inner.read_exact(buf)
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        self.inner.read_to_end(buf)
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> std::io::Result<usize> {
+        self.inner.read_to_string(buf)
+    }
+}
+
+/// A mutable reference to a [`Reader`].
+///
+/// This type acts similar to a *very* fat mutable reference. It can be obtained by constructing a
+/// concrete reader type and calling [`Reader::as_mut`].
+///
+/// Note: Any mutable reference to a `Reader` implements `Into<ReaderMut>` for its lifetime. Use
+/// this instead of coercion which would be available if this was a builtin kind of reference.
+///
+/// Note: Any `Reader` implements `Into<ReaderBox>`, which can again be converted to [`ReaderMut`].
+/// Use it for owning a writer without its specific type similar to `Box<dyn Write>`.
+pub struct ReaderMut<'lt> {
+    inner: &'lt mut dyn Read,
+    vtable: OptTable,
 }
 
 impl ReaderMut<'_> {
