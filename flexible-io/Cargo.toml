@@ -7,7 +7,7 @@ description = "Wraps values such that dyn-safe IO traits need not appear as stat
 license = "EUPL-1.2"
 authors = ["Aurelia Molzer"]
 categories = []
-repository = "https://github.com/HeroicKatora/not-io"
+repository = "https://github.com/197g/not-io"
 readme = "Readme.md"
 
 # Packet configuration

@@ -5,6 +5,18 @@ use std::{
     io::{BufRead, Read, Seek},
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::{
+    fs::FileExt,
+    io::{AsHandle, AsRawHandle, AsRawSocket, AsSocket},
+};
+
+#[cfg(target_family = "unix")]
+use std::os::{
+    fd::{AsFd, AsRawFd},
+    unix::fs::FileExt,
+};
+
 /// A reader, which can dynamically provide IO traits.
 ///
 /// The following traits may be optionally dynamically provided:
@@ -47,11 +59,31 @@ pub struct Reader<R: ?Sized> {
     inner: R,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct OptTable {
     seek: Option<*mut dyn Seek>,
     buf: Option<*mut dyn BufRead>,
     any: Option<*mut dyn Any>,
+
+    // Unix family traits:
+    #[cfg(target_family = "unix")]
+    file_ext: Option<*mut dyn FileExt>,
+    #[cfg(target_family = "unix")]
+    as_fd: Option<*mut dyn AsFd>,
+    #[cfg(target_family = "unix")]
+    as_raw_fd: Option<*mut dyn AsRawFd>,
+
+    // Windows only traits:
+    #[cfg(target_os = "windows")]
+    file_ext: Option<*mut dyn FileExt>,
+    #[cfg(target_os = "windows")]
+    as_handle: Option<*mut dyn AsHandle>,
+    #[cfg(target_os = "windows")]
+    as_raw_handle: Option<*mut dyn AsRawHandle>,
+    #[cfg(target_os = "windows")]
+    as_socket: Option<*mut dyn AsSocket>,
+    #[cfg(target_os = "windows")]
+    as_raw_socket: Option<*mut dyn AsRawSocket>,
 }
 
 /// A box around a type-erased [`Reader`].
@@ -68,11 +100,7 @@ impl<R: Read> Reader<R> {
         Reader {
             inner: reader,
             read,
-            vtable: OptTable {
-                seek: None,
-                buf: None,
-                any: None,
-            },
+            vtable: OptTable::default(),
         }
     }
 }
@@ -129,40 +157,104 @@ impl<R: ?Sized> Reader<R> {
 
         ReaderBox { inner, vtable }
     }
+}
 
+// We solve this by a macro since it is actually more readable than spending ~4 lines of the same
+// structure where we have potential copy-paste problems mentioning the trait name twice and the
+// path of the value is not really obvious (a lot of noise around it).
+//
+// Also, it affords us the ability to make the syntax for all the getters similar.
+macro_rules! dyn_setter {
+    ($(
+        $(#[$meta:meta])*
+        fn $name:ident -> $trait:path = $self:ident:$lhs:expr;
+    )*) => {
+        impl<R> Reader<R> {
+            $(
+                $(#[$meta])*
+                pub fn $name(&mut self)
+                    where R: $trait
+                {
+                    let $self = self;
+                    $lhs = Some(lifetime_erase_trait_vtable!((&mut $self.inner): '_ as $trait));
+                }
+            )*
+        }
+    }
+}
+
+dyn_setter! {
     /// Set the V-Table for [`BufRead`].
     ///
     /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
-    pub fn set_buf(&mut self)
-    where
-        R: Sized + BufRead,
-    {
-        self.vtable.buf = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as BufRead));
-    }
+    fn set_buf -> BufRead = that:that.vtable.buf;
 
     /// Set the V-Table for [`Seek`].
     ///
     /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
-    pub fn set_seek(&mut self)
-    where
-        R: Sized + Seek,
-    {
-        self.vtable.seek = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Seek));
-    }
+    fn set_seek -> Seek = that:that.vtable.seek;
 
     /// Set the V-Table for [`Any`].
     ///
     /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
-    pub fn set_any(&mut self)
-    where
-        R: Sized + Any,
-    {
-        self.vtable.any = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Any));
-    }
+    fn set_any -> Any = that:that.vtable.any;
+}
+
+#[cfg(target_family = "unix")]
+dyn_setter! {
+    /// Set the V-Table for [`FileExt`].
+    ///
+    /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_file_ext -> FileExt = that:that.vtable.file_ext;
+
+    /// Set the V-Table for [`AsRawFd`].
+    ///
+    /// After this call, the methods [`Self::as_fd`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_fd -> AsFd = that:that.vtable.as_fd;
+
+    /// Set the V-Table for [`AsRawFd`].
+    ///
+    /// After this call, the methods [`Self::as_raw_fd`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_raw_fd -> AsRawFd = that:that.vtable.as_raw_fd;
+}
+
+#[cfg(target_os = "windows")]
+dyn_setter! {
+    /// Set the V-Table for [`FileExt`].
+    ///
+    /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_file_ext -> FileExt = that:that.vtable.file_ext;
+
+    /// Set the V-Table for [`AsHandle`].
+    ///
+    /// After this call, the methods [`Self::as_handle`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_handle -> AsHandle = that:that.vtable.as_handle;
+
+    /// Set the V-Table for [`AsRawHandle`].
+    ///
+    /// After this call, the methods [`Self::as_raw_handle`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_raw_handle -> AsRawHandle = that:that.vtable.as_raw_handle;
+
+    /// Set the V-Table for [`AsSocket`].
+    ///
+    /// After this call, the methods [`Self::as_socket`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_socket -> AsSocket = that:that.vtable.as_socket;
+
+    /// Set the V-Table for [`AsRawSocket`].
+    ///
+    /// After this call, the methods [`Self::as_raw_socket`] will return a value. (This trait only has
+    /// methods with a `&self` receiver).
+    fn set_as_raw_socket -> AsRawSocket = that:that.vtable.as_raw_socket;
 }
 
 impl<R: ?Sized> Reader<R> {
-    /// Get the inner value as a dynamic `Read` reference.
     pub fn as_read(&self) -> &(dyn Read + '_) {
         let ptr = &self.inner as *const R;
         let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.read);
@@ -176,66 +268,134 @@ impl<R: ?Sized> Reader<R> {
         unsafe { &mut *local }
     }
 
-    /// Get the inner value as a dynamic `BufRead` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_buf`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_buf(&self) -> Option<&(dyn BufRead + '_)> {
-        let ptr = &self.inner as *const R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.buf?);
-        Some(unsafe { &*local })
-    }
-
-    /// Get the inner value as a mutable dynamic `BufRead` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_buf`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_buf_mut(&mut self) -> Option<&mut (dyn BufRead + '_)> {
-        let ptr = &mut self.inner as *mut R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.buf?);
-        Some(unsafe { &mut *local })
-    }
-
-    /// Get the inner value as a dynamic `Seek` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_seek(&self) -> Option<&(dyn Seek + '_)> {
-        let ptr = &self.inner as *const R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &*local })
-    }
-
-    /// Get the inner value as a mutable dynamic `Seek` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = &mut self.inner as *mut R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
-    }
-
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = &self.inner as *const R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
-    }
-
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = &mut self.inner as *mut R;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
-    }
-
     /// Unwrap the inner value at its original sized type.
     pub fn into_inner(self) -> R
     where
         R: Sized,
     {
         self.inner
+    }
+}
+
+/// Macro to simply re-combination of pointer with vtable, such as for ReaderMut.
+///
+/// ```ignore
+/// impl ReaderMut<'_> {
+///     fn as_seek_mut(&mut self) -> Option<&'_ mut dyn Seek> {…}
+/// }
+/// ```
+///
+/// Requires that the type provide expressions to access the raw pointer (const and mutable) and
+/// the expression to the vtable and then does all the plumbing for recombination. For curious
+/// reasons we can not use `self` in these expressions so we first rename `self` value. Due to
+/// macro cleanliness this new name must be passed in when the expressions want to refer to it.
+macro_rules! dyn_getter {
+    (
+        impl$(<$R:ident>)? $tyfamily:path = self as $self:ident {
+            // Safety requirement: must borrow and create a pointer that is valid for all the
+            // vtable entries that are used in the body.
+            unsafe const ptr: $constptr:expr;
+            // Safety requirement: must mutably borrow and create a pointer that is valid for all
+            // the vtable entries that are used in the body.
+            unsafe mut ptr: $mutptr:expr;
+        } {
+            $(
+            $(#[$meta:meta])*
+            fn $name:ident $({ $(#[$mutmeta:meta])* mut: fn $mut:ident})? -> $trait:path = $lhs:expr;
+            )*
+        }
+    ) => {
+        impl$(<$R: ?Sized>)* $tyfamily {
+            $(
+                $(#[$meta])*
+                pub fn $name(&self) -> Option<&'_ dyn $trait> {
+                    let $self = self;
+                    let raw = $constptr;
+                    let local = WithMetadataOf::with_metadata_of_on_stable(raw, $lhs?);
+                    Some(unsafe { &*local })
+                }
+
+                $(
+                    $(#[$mutmeta])*
+                    pub fn $mut(&mut self) -> Option<&'_ mut dyn $trait> {
+                        let $self = self;
+                        let raw = $mutptr;
+                        let local = WithMetadataOf::with_metadata_of_on_stable(raw, $lhs?);
+                        Some(unsafe { &mut *local })
+                    }
+                )*
+            )*
+        }
+    }
+}
+
+dyn_getter! {
+    impl<R> Reader<R> = self as that {
+        unsafe const ptr: &that.inner as *const R;
+        unsafe mut ptr: &mut that.inner as *mut R;
+    } {
+        /// Get the inner value as a dynamic `BufRead` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Self::set_buf`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_buf {
+            /// Get the inner value as a mutable dynamic `BufRead` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Self::set_buf`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_buf_mut
+        } -> BufRead = that.vtable.buf;
+
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
+    }
+}
+
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl<R> Reader<R> = self as that {
+        unsafe const ptr: &that.inner as *const R;
+        unsafe mut ptr: &mut that.inner as *mut R;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
+    }
+}
+
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl<R> Reader<R> = self as that {
+        unsafe const ptr: &that.inner as *const R;
+        unsafe mut ptr: &mut that.inner as *mut R;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
@@ -276,31 +436,75 @@ impl ReaderMut<'_> {
     pub fn as_read_mut(&mut self) -> &mut (dyn Read + '_) {
         &mut *self.inner
     }
+}
 
-    pub fn as_buf_mut(&mut self) -> Option<&mut (dyn BufRead + '_)> {
-        let ptr = self.inner as *mut dyn Read;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.buf?);
-        Some(unsafe { &mut *local })
+dyn_getter! {
+    impl ReaderMut<'_> = self as that {
+        unsafe const ptr: that.inner as *const dyn Read;
+        unsafe mut ptr: that.inner as *mut dyn Read;
+    } {
+        /// Get the inner value as a dynamic `BufRead` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Reader::set_buf`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_buf {
+            /// Get the inner value as a mutable dynamic `BufRead` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Reader::set_buf`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_buf_mut
+        } -> BufRead = that.vtable.buf;
+
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Reader::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Reader::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
     }
+}
 
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = self.inner as *mut dyn Read;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl ReaderMut<'_> = self as that {
+        unsafe const ptr: that.inner as *const dyn Read;
+        unsafe mut ptr: that.inner as *mut dyn Read;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = self.inner as *const dyn Read;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
-    }
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl ReaderMut<'_> = self as that {
+        unsafe const ptr: &that.inner as *const dyn Read;
+        unsafe mut ptr: &mut that.inner as *mut dyn Read;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = self.inner as *mut dyn Read;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
@@ -315,31 +519,75 @@ impl ReaderBox<'_> {
     pub fn as_read_mut(&mut self) -> &mut (dyn Read + '_) {
         &mut *self.inner
     }
+}
 
-    pub fn as_buf_mut(&mut self) -> Option<&mut (dyn BufRead + '_)> {
-        let ptr = self.inner.as_mut() as *mut _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.buf?);
-        Some(unsafe { &mut *local })
+dyn_getter! {
+    impl ReaderBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const dyn Read;
+        unsafe mut ptr: that.inner.as_mut() as *mut dyn Read;
+    } {
+        /// Get the inner value as a dynamic `BufRead` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Reader::set_buf`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_buf {
+            /// Get the inner value as a mutable dynamic `BufRead` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Reader::set_buf`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_buf_mut
+        } -> BufRead = that.vtable.buf;
+
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Reader::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Reader::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
     }
+}
 
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = self.inner.as_mut() as *mut _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl ReaderBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const _;
+        unsafe mut ptr: that.inner.as_mut() as *mut _;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = self.inner.as_ref() as *const _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
-    }
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl ReaderBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const dyn Read;
+        unsafe mut ptr: that.inner.as_mut() as *mut dyn Read;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = self.inner.as_mut() as *mut _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
