@@ -5,6 +5,18 @@ use std::{
     io::{Seek, Write},
 };
 
+#[cfg(target_os = "windows")]
+use std::os::windows::{
+    fs::FileExt,
+    io::{AsHandle, AsRawHandle, AsRawSocket, AsSocket},
+};
+
+#[cfg(target_family = "unix")]
+use std::os::{
+    fd::{AsFd, AsRawFd},
+    unix::fs::FileExt,
+};
+
 /// A writer, which can dynamically provide IO traits.
 ///
 /// The following traits may be optionally dynamically provided:
@@ -54,10 +66,30 @@ pub struct Writer<W: ?Sized> {
     inner: W,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct OptTable {
     seek: Option<*mut dyn Seek>,
     any: Option<*mut dyn Any>,
+
+    // Unix family traits:
+    #[cfg(target_family = "unix")]
+    file_ext: Option<*mut dyn FileExt>,
+    #[cfg(target_family = "unix")]
+    as_fd: Option<*mut dyn AsFd>,
+    #[cfg(target_family = "unix")]
+    as_raw_fd: Option<*mut dyn AsRawFd>,
+
+    // Windows only traits:
+    #[cfg(target_os = "windows")]
+    file_ext: Option<*mut dyn FileExt>,
+    #[cfg(target_os = "windows")]
+    as_handle: Option<*mut dyn AsHandle>,
+    #[cfg(target_os = "windows")]
+    as_raw_handle: Option<*mut dyn AsRawHandle>,
+    #[cfg(target_os = "windows")]
+    as_socket: Option<*mut dyn AsSocket>,
+    #[cfg(target_os = "windows")]
+    as_raw_socket: Option<*mut dyn AsRawSocket>,
 }
 
 /// A box around a type-erased [`Writer`].
@@ -74,10 +106,7 @@ impl<W: Write> Writer<W> {
         Writer {
             inner: writer,
             write,
-            vtable: OptTable {
-                seek: None,
-                any: None,
-            },
+            vtable: OptTable::default(),
         }
     }
 }
@@ -134,25 +163,77 @@ impl<W: ?Sized> Writer<W> {
 
         WriterBox { inner, vtable }
     }
+}
 
-    /// Set the V-Table of [`Seek`].
-    ///
-    /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
-    pub fn set_seek(&mut self)
-    where
-        W: Sized + Seek,
-    {
-        self.vtable.seek = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Seek));
+dyn_setter! {
+    impl<W> Writer<W> = self as that {
+        /// Set the V-Table of [`Seek`].
+        ///
+        /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
+        fn set_seek -> Seek = that.vtable.seek;
+
+        /// Set the V-Table for [`Any`].
+        ///
+        /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
+        fn set_any -> Any = that.vtable.any;
     }
+}
 
-    /// Set the V-Table for [`Any`].
-    ///
-    /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
-    pub fn set_any(&mut self)
-    where
-        W: Sized + Any,
-    {
-        self.vtable.any = Some(lifetime_erase_trait_vtable!((&mut self.inner): '_ as Any));
+#[cfg(target_family = "unix")]
+dyn_setter! {
+    impl<W> Writer<W> = self as that {
+        /// Set the V-Table for [`FileExt`].
+        ///
+        /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_file_ext -> FileExt = that.vtable.file_ext;
+
+        /// Set the V-Table for [`AsRawFd`].
+        ///
+        /// After this call, the methods [`Self::as_fd`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_fd -> AsFd = that.vtable.as_fd;
+
+        /// Set the V-Table for [`AsRawFd`].
+        ///
+        /// After this call, the methods [`Self::as_raw_fd`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
+    }
+}
+
+#[cfg(target_os = "windows")]
+dyn_setter! {
+    impl<W> Writer<W> = self as that {
+        /// Set the V-Table for [`FileExt`].
+        ///
+        /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_file_ext -> FileExt = that.vtable.file_ext;
+
+        /// Set the V-Table for [`AsHandle`].
+        ///
+        /// After this call, the methods [`Self::as_handle`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_handle -> AsHandle = that.vtable.as_handle;
+
+        /// Set the V-Table for [`AsRawHandle`].
+        ///
+        /// After this call, the methods [`Self::as_raw_handle`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        /// Set the V-Table for [`AsSocket`].
+        ///
+        /// After this call, the methods [`Self::as_socket`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_socket -> AsSocket = that.vtable.as_socket;
+
+        /// Set the V-Table for [`AsRawSocket`].
+        ///
+        /// After this call, the methods [`Self::as_raw_socket`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
@@ -171,46 +252,70 @@ impl<W: ?Sized> Writer<W> {
         unsafe { &mut *local }
     }
 
-    /// Get the inner value as a dynamic `Seek` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_seek(&self) -> Option<&(dyn Seek + '_)> {
-        let ptr = &self.inner as *const W;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &*local })
-    }
-
-    /// Get the inner value as a mutable dynamic `Seek` reference.
-    ///
-    /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
-    /// The value can be moved after such call arbitrarily.
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = &mut self.inner as *mut W;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
-    }
-
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = &self.inner as *const W;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
-    }
-
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = &mut self.inner as *mut W;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
-    }
-
     /// Unwrap the inner value at its original sized type.
     pub fn into_inner(self) -> W
     where
         W: Sized,
     {
         self.inner
+    }
+}
+
+dyn_getter! {
+    impl<W> Writer<W> = self as that {
+        unsafe const ptr: &that.inner as *const W;
+        unsafe mut ptr: &mut that.inner as *mut W;
+    } {
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
+    }
+}
+
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl<W> Writer<W> = self as that {
+        unsafe const ptr: &that.inner as *const W;
+        unsafe mut ptr: &mut that.inner as *mut W;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
+    }
+}
+
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl<W> Writer<W> = self as that {
+        unsafe const ptr: &that.inner as *const W;
+        unsafe mut ptr: &mut that.inner as *mut W;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
@@ -233,25 +338,63 @@ impl WriterMut<'_> {
     pub fn as_write_mut(&mut self) -> &mut (dyn Write + '_) {
         &mut *self.inner
     }
+}
 
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = self.inner as *mut dyn Write;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
+dyn_getter! {
+    impl WriterMut<'_> = self as that {
+        unsafe const ptr: that.inner as *const dyn Write;
+        unsafe mut ptr: that.inner as *mut dyn Write;
+    } {
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = self.inner as *const dyn Write;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl WriterMut<'_> = self as that {
+        unsafe const ptr: that.inner as *const dyn Write;
+        unsafe mut ptr: that.inner as *mut dyn Write;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = self.inner as *mut dyn Write;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl WriterMut<'_> = self as that {
+        unsafe const ptr: that.inner as *const dyn Write;
+        unsafe mut ptr: that.inner as *mut dyn Write;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
@@ -266,25 +409,63 @@ impl WriterBox<'_> {
     pub fn as_read_mut(&mut self) -> &mut (dyn Write + '_) {
         &mut *self.inner
     }
+}
 
-    pub fn as_seek_mut(&mut self) -> Option<&mut (dyn Seek + '_)> {
-        let ptr = self.inner.as_mut() as *mut _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.seek?);
-        Some(unsafe { &mut *local })
+dyn_getter! {
+    impl WriterBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const dyn Write;
+        unsafe mut ptr: that.inner.as_mut() as *mut dyn Write;
+    } {
+        /// Get the inner value as a dynamic `Seek` reference.
+        ///
+        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// The value can be moved after such call arbitrarily.
+        fn as_seek {
+            /// Get the inner value as a mutable dynamic `Seek` reference.
+            ///
+            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// The value can be moved after such call arbitrarily.
+            mut: fn as_seek_mut
+        } -> Seek = that.vtable.seek;
+
+        /// Get the inner value as a dynamic `Any` reference.
+        fn as_any {
+            /// Get the inner value as a dynamic `Any` reference.
+            mut: fn as_any_mut
+        } -> Any = that.vtable.any;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any(&self) -> Option<&'_ dyn Any> {
-        let ptr = self.inner.as_ref() as *const _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &*local })
+#[cfg(target_family = "unix")]
+dyn_getter! {
+    impl WriterBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const dyn Write;
+        unsafe mut ptr: that.inner.as_mut() as *mut dyn Write;
+    } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_fd -> AsFd = that.vtable.as_fd;
+
+        fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
+}
 
-    /// Get the inner value as a dynamic `Any` reference.
-    pub fn as_any_mut(&mut self) -> Option<&'_ mut dyn Any> {
-        let ptr = self.inner.as_mut() as *mut _;
-        let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.vtable.any?);
-        Some(unsafe { &mut *local })
+#[cfg(target_os = "windows")]
+dyn_getter! {
+    impl WriterBox<'_> = self as that {
+        unsafe const ptr: that.inner.as_ref() as *const dyn Write;
+        unsafe mut ptr: that.inner.as_mut() as *mut dyn Write;
+    } {
+        fn as_file_ext -> FileExt = that.vtable.file_ext;
+
+        fn as_handle -> AsHandle = that.vtable.as_handle;
+
+        fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+
+        fn as_socket -> AsSocket = that.vtable.as_socket;
+
+        fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 

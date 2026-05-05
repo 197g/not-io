@@ -29,18 +29,18 @@ macro_rules! lifetime_erase_trait_vtable {
 // Also, it affords us the ability to make the syntax for all the getters similar.
 macro_rules! dyn_setter {
     (
-        impl $(<$R:ident>)? $tyfamily:path = self as $self:ident {
+        impl <$R:ident> $tyfamily:path = self as $self:ident {
             $(
                 $(#[$meta:meta])*
                 fn $name:ident -> $trait:path = $lhs:expr;
             )*
         }
     ) => {
-        impl$(<$R>)* $tyfamily {
+        impl<$R> $tyfamily {
             $(
                 $(#[$meta])*
                 pub fn $name(&mut self)
-                    where R: $trait
+                    where $R: $trait
                 {
                     let $self = self;
                     $lhs = Some(lifetime_erase_trait_vtable!((&mut $self.inner): '_ as $trait));
