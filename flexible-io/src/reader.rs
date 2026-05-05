@@ -159,99 +159,81 @@ impl<R: ?Sized> Reader<R> {
     }
 }
 
-// We solve this by a macro since it is actually more readable than spending ~4 lines of the same
-// structure where we have potential copy-paste problems mentioning the trait name twice and the
-// path of the value is not really obvious (a lot of noise around it).
-//
-// Also, it affords us the ability to make the syntax for all the getters similar.
-macro_rules! dyn_setter {
-    ($(
-        $(#[$meta:meta])*
-        fn $name:ident -> $trait:path = $self:ident:$lhs:expr;
-    )*) => {
-        impl<R> Reader<R> {
-            $(
-                $(#[$meta])*
-                pub fn $name(&mut self)
-                    where R: $trait
-                {
-                    let $self = self;
-                    $lhs = Some(lifetime_erase_trait_vtable!((&mut $self.inner): '_ as $trait));
-                }
-            )*
-        }
-    }
-}
-
 dyn_setter! {
-    /// Set the V-Table for [`BufRead`].
-    ///
-    /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
-    fn set_buf -> BufRead = that:that.vtable.buf;
+    impl<R> Reader<R> = self as that {
+        /// Set the V-Table for [`BufRead`].
+        ///
+        /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
+        fn set_buf -> BufRead = that.vtable.buf;
 
-    /// Set the V-Table for [`Seek`].
-    ///
-    /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
-    fn set_seek -> Seek = that:that.vtable.seek;
+        /// Set the V-Table for [`Seek`].
+        ///
+        /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
+        fn set_seek -> Seek = that.vtable.seek;
 
-    /// Set the V-Table for [`Any`].
-    ///
-    /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
-    fn set_any -> Any = that:that.vtable.any;
+        /// Set the V-Table for [`Any`].
+        ///
+        /// After this call, the methods [`Self::as_any`] and [`Self::as_any_mut`] will return values.
+        fn set_any -> Any = that.vtable.any;
+    }
 }
 
 #[cfg(target_family = "unix")]
 dyn_setter! {
-    /// Set the V-Table for [`FileExt`].
-    ///
-    /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_file_ext -> FileExt = that:that.vtable.file_ext;
+    impl<R> Reader<R> = self as that {
+        /// Set the V-Table for [`FileExt`].
+        ///
+        /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_file_ext -> FileExt = that.vtable.file_ext;
 
-    /// Set the V-Table for [`AsRawFd`].
-    ///
-    /// After this call, the methods [`Self::as_fd`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_fd -> AsFd = that:that.vtable.as_fd;
+        /// Set the V-Table for [`AsRawFd`].
+        ///
+        /// After this call, the methods [`Self::as_fd`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_fd -> AsFd = that.vtable.as_fd;
 
-    /// Set the V-Table for [`AsRawFd`].
-    ///
-    /// After this call, the methods [`Self::as_raw_fd`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_raw_fd -> AsRawFd = that:that.vtable.as_raw_fd;
+        /// Set the V-Table for [`AsRawFd`].
+        ///
+        /// After this call, the methods [`Self::as_raw_fd`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
+    }
 }
 
 #[cfg(target_os = "windows")]
 dyn_setter! {
-    /// Set the V-Table for [`FileExt`].
-    ///
-    /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_file_ext -> FileExt = that:that.vtable.file_ext;
+    impl<R> Reader<R> = self as that {
+        /// Set the V-Table for [`FileExt`].
+        ///
+        /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_file_ext -> FileExt = that.vtable.file_ext;
 
-    /// Set the V-Table for [`AsHandle`].
-    ///
-    /// After this call, the methods [`Self::as_handle`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_handle -> AsHandle = that:that.vtable.as_handle;
+        /// Set the V-Table for [`AsHandle`].
+        ///
+        /// After this call, the methods [`Self::as_handle`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_handle -> AsHandle = that.vtable.as_handle;
 
-    /// Set the V-Table for [`AsRawHandle`].
-    ///
-    /// After this call, the methods [`Self::as_raw_handle`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_raw_handle -> AsRawHandle = that:that.vtable.as_raw_handle;
+        /// Set the V-Table for [`AsRawHandle`].
+        ///
+        /// After this call, the methods [`Self::as_raw_handle`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
-    /// Set the V-Table for [`AsSocket`].
-    ///
-    /// After this call, the methods [`Self::as_socket`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_socket -> AsSocket = that:that.vtable.as_socket;
+        /// Set the V-Table for [`AsSocket`].
+        ///
+        /// After this call, the methods [`Self::as_socket`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_socket -> AsSocket = that.vtable.as_socket;
 
-    /// Set the V-Table for [`AsRawSocket`].
-    ///
-    /// After this call, the methods [`Self::as_raw_socket`] will return a value. (This trait only has
-    /// methods with a `&self` receiver).
-    fn set_as_raw_socket -> AsRawSocket = that:that.vtable.as_raw_socket;
+        /// Set the V-Table for [`AsRawSocket`].
+        ///
+        /// After this call, the methods [`Self::as_raw_socket`] will return a value. (This trait only has
+        /// methods with a `&self` receiver).
+        fn set_as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
+    }
 }
 
 impl<R: ?Sized> Reader<R> {
@@ -274,58 +256,6 @@ impl<R: ?Sized> Reader<R> {
         R: Sized,
     {
         self.inner
-    }
-}
-
-/// Macro to simply re-combination of pointer with vtable, such as for ReaderMut.
-///
-/// ```ignore
-/// impl ReaderMut<'_> {
-///     fn as_seek_mut(&mut self) -> Option<&'_ mut dyn Seek> {…}
-/// }
-/// ```
-///
-/// Requires that the type provide expressions to access the raw pointer (const and mutable) and
-/// the expression to the vtable and then does all the plumbing for recombination. For curious
-/// reasons we can not use `self` in these expressions so we first rename `self` value. Due to
-/// macro cleanliness this new name must be passed in when the expressions want to refer to it.
-macro_rules! dyn_getter {
-    (
-        impl$(<$R:ident>)? $tyfamily:path = self as $self:ident {
-            // Safety requirement: must borrow and create a pointer that is valid for all the
-            // vtable entries that are used in the body.
-            unsafe const ptr: $constptr:expr;
-            // Safety requirement: must mutably borrow and create a pointer that is valid for all
-            // the vtable entries that are used in the body.
-            unsafe mut ptr: $mutptr:expr;
-        } {
-            $(
-            $(#[$meta:meta])*
-            fn $name:ident $({ $(#[$mutmeta:meta])* mut: fn $mut:ident})? -> $trait:path = $lhs:expr;
-            )*
-        }
-    ) => {
-        impl$(<$R: ?Sized>)* $tyfamily {
-            $(
-                $(#[$meta])*
-                pub fn $name(&self) -> Option<&'_ dyn $trait> {
-                    let $self = self;
-                    let raw = $constptr;
-                    let local = WithMetadataOf::with_metadata_of_on_stable(raw, $lhs?);
-                    Some(unsafe { &*local })
-                }
-
-                $(
-                    $(#[$mutmeta])*
-                    pub fn $mut(&mut self) -> Option<&'_ mut dyn $trait> {
-                        let $self = self;
-                        let raw = $mutptr;
-                        let local = WithMetadataOf::with_metadata_of_on_stable(raw, $lhs?);
-                        Some(unsafe { &mut *local })
-                    }
-                )*
-            )*
-        }
     }
 }
 
