@@ -17,14 +17,19 @@ where the traits are statically shown to be implemented.
 ## Usage
 
 ```rust
-use flexible_io::Reader;
-fn read_from<R>(reader: Reader<R>) {
+use flexible_io::reader::ReaderMut;
+
+fn read_from(mut file: ReaderMut<'_>) {
     if let Some(seekable) = file.as_seek_mut() {
-        with_seek_strategy(reader);
+        with_seek_strategy(seekable);
     } else {
-        with_read_strategy(reader);
+        with_read_strategy(file.as_read_mut());
     }
 }
+
+fn with_seek_strategy(_: &mut dyn std::io::Seek) {}
+
+fn with_read_strategy(_: &mut dyn std::io::Read) {}
 ```
 
 ## Known issues

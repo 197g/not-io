@@ -11,7 +11,11 @@
 //! not be usable, their bounds can never be met. And combining traits into a large dyn-trait is
 //! redundant as it trait-impls become part of the static validity requirement again.
 #![cfg_attr(feature = "unstable_set_ptr_value", feature(set_ptr_value))]
-#[deny(missing_docs)]
+#![deny(missing_docs)]
+
+#[doc = include_str!("../Readme.md")]
+#[cfg(doc)]
+pub mod docs {}
 
 macro_rules! lifetime_erase_trait_vtable {
     ((&mut $r:expr): $lt:lifetime as $trait:path) => {{

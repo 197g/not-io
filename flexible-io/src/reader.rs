@@ -237,6 +237,9 @@ dyn_setter! {
 }
 
 impl<R: ?Sized> Reader<R> {
+    /// Get the inner value as a shared dynamic `Read` reference.
+    ///
+    /// This is not terribly useful but provided for completeness.
     pub fn as_read(&self) -> &(dyn Read + '_) {
         let ptr = &self.inner as *const R;
         let local = WithMetadataOf::with_metadata_of_on_stable(ptr, self.read);
@@ -305,8 +308,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -317,14 +322,21 @@ dyn_getter! {
         unsafe const ptr: &that.inner as *const R;
         unsafe mut ptr: &mut that.inner as *mut R;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
+        ///
+        /// Some of the methods exposed by that trait allow writing to the file.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
@@ -363,6 +375,7 @@ pub struct ReaderMut<'lt> {
 }
 
 impl ReaderMut<'_> {
+    /// Get the inner value as a mutable dynamic `Read` reference.
     pub fn as_read_mut(&mut self) -> &mut (dyn Read + '_) {
         &mut *self.inner
     }
@@ -414,8 +427,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -426,19 +441,27 @@ dyn_getter! {
         unsafe const ptr: &that.inner as *const dyn Read;
         unsafe mut ptr: &mut that.inner as *mut dyn Read;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
 impl ReaderBox<'_> {
+    /// Get the inner value as a shared dynamic `Read` reference.
+    ///
+    /// This is not terribly useful but provided for completeness.
     pub fn as_mut(&mut self) -> ReaderMut<'_> {
         ReaderMut {
             vtable: self.vtable,
@@ -446,6 +469,7 @@ impl ReaderBox<'_> {
         }
     }
 
+    /// Get the inner value as a mutable dynamic `Read` reference.
     pub fn as_read_mut(&mut self) -> &mut (dyn Read + '_) {
         &mut *self.inner
     }
@@ -497,8 +521,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -509,14 +535,19 @@ dyn_getter! {
         unsafe const ptr: that.inner.as_ref() as *const dyn Read;
         unsafe mut ptr: that.inner.as_mut() as *mut dyn Read;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }

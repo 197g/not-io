@@ -268,12 +268,12 @@ dyn_getter! {
     } {
         /// Get the inner value as a dynamic `Seek` reference.
         ///
-        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// This returns `None` unless a previous call to [`Self::set_seek`] was executed, by any other caller.
         /// The value can be moved after such call arbitrarily.
         fn as_seek {
             /// Get the inner value as a mutable dynamic `Seek` reference.
             ///
-            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// This returns `None` unless a previous call to [`Self::set_seek`] was executed, by any other caller.
             /// The value can be moved after such call arbitrarily.
             mut: fn as_seek_mut
         } -> Seek = that.vtable.seek;
@@ -295,8 +295,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -307,14 +309,19 @@ dyn_getter! {
         unsafe const ptr: &that.inner as *const W;
         unsafe mut ptr: &mut that.inner as *mut W;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
@@ -335,6 +342,7 @@ pub struct WriterMut<'lt> {
 }
 
 impl WriterMut<'_> {
+    /// Get the inner value as a mutable dynamic `Write` reference.
     pub fn as_write_mut(&mut self) -> &mut (dyn Write + '_) {
         &mut *self.inner
     }
@@ -347,12 +355,12 @@ dyn_getter! {
     } {
         /// Get the inner value as a dynamic `Seek` reference.
         ///
-        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// This returns `None` unless a previous call to [`Writer::set_seek`] was executed, by any other caller.
         /// The value can be moved after such call arbitrarily.
         fn as_seek {
             /// Get the inner value as a mutable dynamic `Seek` reference.
             ///
-            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// This returns `None` unless a previous call to [`Writer::set_seek`] was executed, by any other caller.
             /// The value can be moved after such call arbitrarily.
             mut: fn as_seek_mut
         } -> Seek = that.vtable.seek;
@@ -374,8 +382,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -386,19 +396,29 @@ dyn_getter! {
         unsafe const ptr: that.inner as *const dyn Write;
         unsafe mut ptr: that.inner as *mut dyn Write;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
 
 impl WriterBox<'_> {
+    /// Get a view equivalent to very-fat mutable reference.
+    ///
+    /// This erases the concrete type `W` which allows consumers that intend to avoid polymorphic
+    /// code that monomorphizes. The mutable reference has all accessors of a mutable reference
+    /// except it doesn't offer access with the underlying writer's type itself.
     pub fn as_mut(&mut self) -> WriterMut<'_> {
         WriterMut {
             vtable: self.vtable,
@@ -406,6 +426,7 @@ impl WriterBox<'_> {
         }
     }
 
+    /// Provide mutable access to the underlying writer.
     pub fn as_read_mut(&mut self) -> &mut (dyn Write + '_) {
         &mut *self.inner
     }
@@ -418,12 +439,12 @@ dyn_getter! {
     } {
         /// Get the inner value as a dynamic `Seek` reference.
         ///
-        /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+        /// This returns `None` unless a previous call to [`Writer::set_seek`] was executed, by any other caller.
         /// The value can be moved after such call arbitrarily.
         fn as_seek {
             /// Get the inner value as a mutable dynamic `Seek` reference.
             ///
-            /// This returns `None` unless a previous call to [`Self::set_seek`] as executed, by any other caller.
+            /// This returns `None` unless a previous call to [`Writer::set_seek`] was executed, by any other caller.
             /// The value can be moved after such call arbitrarily.
             mut: fn as_seek_mut
         } -> Seek = that.vtable.seek;
@@ -445,8 +466,10 @@ dyn_getter! {
         /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsFd`] reference.
         fn as_fd -> AsFd = that.vtable.as_fd;
 
+        /// Get the inner value as a dynamic [`AsRawFd`] reference.
         fn as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
     }
 }
@@ -457,14 +480,19 @@ dyn_getter! {
         unsafe const ptr: that.inner.as_ref() as *const dyn Write;
         unsafe mut ptr: that.inner.as_mut() as *mut dyn Write;
     } {
+        /// Get the inner value as a dynamic [`FileExt`] reference.
         fn as_file_ext -> FileExt = that.vtable.file_ext;
 
+        /// Get the inner value as a dynamic [`AsHandle`] reference.
         fn as_handle -> AsHandle = that.vtable.as_handle;
 
+        /// Get the inner value as a dynamic [`AsRawHandle`] reference.
         fn as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
 
+        /// Get the inner value as a dynamic [`AsSocket`] reference.
         fn as_socket -> AsSocket = that.vtable.as_socket;
 
+        /// Get the inner value as a dynamic [`AsRawSocket`] reference.
         fn as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
     }
 }
