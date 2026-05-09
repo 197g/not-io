@@ -1,18 +1,18 @@
 [package]
 # Distribution information.
 name = "flexible-io"
-version = "0.5.1"
+version = "0.6.0"
 description = "Wraps values such that dyn-safe IO traits need not appear as static bounds"
 
 license = "EUPL-1.2"
 authors = ["Aurelia Molzer"]
 categories = []
-repository = "https://github.com/HeroicKatora/not-io"
+repository = "https://github.com/197g/not-io"
 readme = "Readme.md"
 
 # Packet configuration
 edition = "2021"
-# rust-version = "1.97" # (hopefully)
+rust-version = "1.88"
 
 [dependencies]
 
