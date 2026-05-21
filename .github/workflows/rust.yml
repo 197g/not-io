@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        rust: ["1.56", stable, beta, nightly]
+        rust: ["1.88", stable, beta, nightly]
         features: ["", alloc, std]
         command: [build, test]
     steps:
