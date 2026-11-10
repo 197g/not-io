@@ -164,12 +164,24 @@ dyn_setter! {
         /// Set the V-Table for [`BufRead`].
         ///
         /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
-        fn set_buf dyn fn try_as_buf -> BufRead = that.vtable.buf;
+        fn set_buf -> BufRead,
+            /// Setup a vtable for [`BufRead`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_buf`] for basic usage. Returns a `bool` indicating if a vtable is
+            /// present after this call.
+            fn unstable_try_as_dyn try_as_buf 
+        = that.vtable.buf;
 
         /// Set the V-Table for [`Seek`].
         ///
         /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
-        fn set_seek dyn fn try_as_seek -> Seek = that.vtable.seek;
+        fn set_seek -> Seek,
+            /// Setup a vtable for [`Seek`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_seek`] for basic usage. Returns a `bool` indicating if a vtable is
+            /// present after this call.
+            fn unstable_try_as_dyn try_as_seek
+        = that.vtable.seek;
 
         /// Set the V-Table for [`Any`].
         ///
@@ -185,19 +197,37 @@ dyn_setter! {
         ///
         /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_file_ext -> FileExt = that.vtable.file_ext;
+        fn set_file_ext -> FileExt,
+            /// Setup a vtable for [`FileExt`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_file_ext`] for basic usage. Returns a `bool` indicating if a vtable
+            /// is present after this call.
+            fn unstable_try_as_dyn try_as_file_ext
+        = that.vtable.file_ext;
 
         /// Set the V-Table for [`AsRawFd`].
         ///
         /// After this call, the methods [`Self::as_fd`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_fd -> AsFd = that.vtable.as_fd;
+        fn set_as_fd -> AsFd,
+            /// Setup a vtable for [`AsFd`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_fd`] for basic usage. Returns a `bool` indicating if a vtable
+            /// is present after this call.
+            fn unstable_try_as_dyn try_as_fd
+        = that.vtable.as_fd;
 
         /// Set the V-Table for [`AsRawFd`].
         ///
         /// After this call, the methods [`Self::as_raw_fd`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_raw_fd -> AsRawFd = that.vtable.as_raw_fd;
+        fn set_as_raw_fd -> AsRawFd,
+            /// Setup a vtable for [`AsRawFd`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_raw_fd`] for basic usage. Returns a `bool` indicating if a vtable
+            /// is present after this call.
+            fn unstable_try_as_dyn try_as_raw_fd
+        = that.vtable.as_raw_fd;
     }
 }
 
@@ -208,31 +238,61 @@ dyn_setter! {
         ///
         /// After this call, the methods [`Self::as_file_ext`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_file_ext -> FileExt = that.vtable.file_ext;
+        fn set_file_ext -> FileExt,
+            /// Setup a vtable for [`FileExt`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_file_ext`] for basic usage. Returns a `bool` indicating if a vtable
+            /// is present after this call.
+            fn unstable_try_as_dyn try_as_file_ext
+        = that.vtable.file_ext;
 
         /// Set the V-Table for [`AsHandle`].
         ///
         /// After this call, the methods [`Self::as_handle`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_handle -> AsHandle = that.vtable.as_handle;
+        fn set_as_handle -> AsHandle,
+            /// Setup a vtable for [`AsHandle`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_handle`] for basic usage. Returns a `bool` indicating if a vtable
+            /// is present after this call.
+            fn unstable_try_as_dyn try_as_handle
+        = that.vtable.as_handle;
 
         /// Set the V-Table for [`AsRawHandle`].
         ///
         /// After this call, the methods [`Self::as_raw_handle`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_raw_handle -> AsRawHandle = that.vtable.as_raw_handle;
+        fn set_as_raw_handle -> AsRawHandle,
+            /// Setup a vtable for [`AsRawHandle`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_raw_handle`] for basic usage. Returns a `bool` indicating if a
+            /// vtable is present after this call.
+            fn unstable_try_as_dyn try_as_raw_handle
+        = that.vtable.as_raw_handle;
 
         /// Set the V-Table for [`AsSocket`].
         ///
         /// After this call, the methods [`Self::as_socket`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_socket -> AsSocket = that.vtable.as_socket;
+        fn set_as_socket -> AsSocket,
+            /// Setup a vtable for [`AsSocket`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_socket`] for basic usage. Returns a `bool` indicating if a
+            /// vtable is present after this call.
+            fn unstable_try_as_dyn try_as_socket
+        = that.vtable.as_socket;
 
         /// Set the V-Table for [`AsRawSocket`].
         ///
         /// After this call, the methods [`Self::as_raw_socket`] will return a value. (This trait only has
         /// methods with a `&self` receiver).
-        fn set_as_raw_socket -> AsRawSocket = that.vtable.as_raw_socket;
+        fn set_as_raw_socket -> AsRawSocket,
+            /// Setup a vtable for [`AsRawSocket`] by casting `T` into an optional dyn-trait object.
+            ///
+            /// See [`Self::set_as_raw_socket`] for basic usage. Returns a `bool` indicating if a
+            /// vtable is present after this call.
+            fn unstable_try_as_dyn try_as_raw_socket
+        = that.vtable.as_raw_socket;
     }
 }
 

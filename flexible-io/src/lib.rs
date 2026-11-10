@@ -37,7 +37,12 @@ macro_rules! dyn_setter {
         impl <$R:ident> $tyfamily:path = self as $self:ident {
             $(
                 $(#[$meta:meta])*
-                fn $name:ident $(dyn fn $dyn:ident)? -> $trait:path = $lhs:expr;
+                fn $name:ident -> $trait:path
+                $(,
+                    $(#[$dynmeta:meta])*
+                    fn unstable_try_as_dyn $dyn:ident
+                )?
+                = $lhs:expr;
             )*
         }
     ) => {
@@ -52,16 +57,23 @@ macro_rules! dyn_setter {
                 }
 
                 $(
-                    /// Setup a vtable using the unstable `try_as_dyn` operation on `T`.
+                    #[cfg(feature = "unstable_try_as_dyn")]
+                    $(#[$dynmeta])*
+                    /// # Usage Constraints
                     ///
                     // The compiler requires that `T`'s impl of the trait is 'fully generic' for
                     // downcasting in this manner. For instance this won't work for `Cursor<B>`
                     // where the generic `B` has no bounds but the impl has `B: AsRef<[u8]>`. It's
                     // not entirely clear how reliable a proxy around the type that agrees in both
                     // should be and if this may get relaxed.
-                    #[cfg(feature = "unstable_try_as_dyn")]
                     pub fn $dyn(&mut self) -> bool {
                         let $self = self;
+
+                        // Never delete the trait vtable if already present.
+                        if $lhs.is_some() {
+                            return true;
+                        }
+
                         $lhs = ::core::any::try_as_dyn_mut::<_, dyn $trait + '_>(&mut $self.inner)
                             .map(|v| lifetime_erase_trait_vtable!((&mut *v): '_ as $trait));
                         $lhs.is_some()
