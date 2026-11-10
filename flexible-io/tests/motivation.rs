@@ -39,7 +39,7 @@ fn motivating_case() {
         assert_eq!(buffer, b"world!");
         assert_eq!(
             report.num_seek, 1,
-            "Offset was resolved via seek, we didn't tell that it can"
+            "Offset was not resolved via seek but we told it to"
         );
 
         assert!(
@@ -124,4 +124,33 @@ fn read_to_end<R: Read + ?Sized>(
     let mut plug = Plug(reader, IoReport::default());
     plug.read_to_end(buffer)?;
     Ok(plug.1)
+}
+
+#[cfg(feature = "unstable_try_as_dyn")]
+#[test]
+fn motivating_case_dyn() {
+    let reader = std::fs::File::open("Cargo.toml").unwrap();
+    let reader = Reader::new(reader);
+
+    // Look me, no trait bounds at all!
+    fn inner<T>(mut reader: Reader<T>) -> IoReport {
+        // Note how `File` is special here, this won't work for `Cursor<B>`. The compiler requires
+        // that `T`'s impl of `Seek` is 'fully generic'. It isn't for `Cursor` where the `B` has no
+        // bounds but the impl has `B: AsRef<[u8]>`.
+        assert!(reader.try_as_seek());
+        let mut buffer = vec![];
+        read_with_skip(reader.as_mut(), 7, &mut buffer).unwrap()
+    }
+
+    let report = inner(reader);
+
+    assert_eq!(
+        report.num_seek, 1,
+        "Offset was not resolved via seek but we told it to"
+    );
+
+    assert!(
+        report.num_read >= 2,
+        "Read took two reads. We know slices fulfill the whole request if possible. Then a third read zeros to tell the reader that the slice is EOF."
+    );
 }

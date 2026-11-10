@@ -5,12 +5,43 @@
 //! the Seek requirement is only determined at runtime, such as when a portion of the functionality
 //! does not depend on it, and an error should be returned.
 //!
+//! The common usage here is (symmetric for the writer):
+//!
+//! 1. Wrap an underlying reader into [`reader::Reader`].
+//! 2. Call the various [`set_*`](reader::Reader::set_buf`) methods in a context where the
+//!    underlying type is still concrete and its trait bounds can be determined.
+//! 3. Pass the built reader to a consumer as [`ReaderMut`](`reader::Reader::as_mut`) or as
+//!    [a `Box`](`reader::Reader::into_boxed`).
+//! 4. The consumer dispatches on the support of `Seek` or `BufRead` etc. by deriving such a dynamic
+//!    trait object with [`reader::ReaderMut::as_buf_mut`] etc.
+//!
+//! ## Nightly features
+//!
+//! On nightly the compiler introduces a new operation, `try_as_dyn`, that allows downcasting the
+//! values of _some_ generic types to _some_ `dyn` trait objects without any such bound in context.
+//!
+//! This is built on a compiler feature that is not yet stabilized but it allows for a more
+//! ergonomic API where applicable. The `unstable_try_as_dyn` feature enables this functionality in
+//! this crate.
+//!
+//! The "some" qualifier here is important, this is not guaranteed to work and depends on the family
+//! of the generic type and the trait object. While the crate's selection of traits lets us cover
+//! the latter case, the former depends fully on the generic type being used in
+//! [`Reader`](`reader::Reader`) and [`Writer`](`writer::Writer`).
+//!
+//! ## Constraints
+//!
 //! Note that the wrapped type can not be unsized (`dyn` trait) itself. This may be fixed at a
-//! later point to make the reader suitable for use in embedded. In particular, the double
-//! indirection of instantiating with `R = &mut dyn Read` wouldn't make sense as the setters would
-//! not be usable, their bounds can never be met. And combining traits into a large dyn-trait is
-//! redundant as it trait-impls become part of the static validity requirement again.
+//! later point to make the reader suitable for use in embedded. Alternatively, we may get IO traits
+//! in `core` at an earlier point. The reason behind this support is that double
+//! indirection of instantiating with `R = &mut dyn Read` itself wouldn't be too useful. The setters
+//! would not be usable as their bounds can never be met, the dyn trait is itself a concrete type
+//! (even the nightly feature can not optionally cast an existing dyn to an unrelated another).
+//! Instead, you'd need to provide your own combining trait object bundling a static selection of IO
+//! traits into a large dyn-trait. This is highly redundant as its parent-trait-bounds become part
+//! of the static validity requirement again.
 #![cfg_attr(feature = "unstable_set_ptr_value", feature(set_ptr_value))]
+#![cfg_attr(feature = "unstable_try_as_dyn", feature(try_as_dyn))]
 #![deny(missing_docs)]
 
 #[doc = include_str!("../Readme.md")]
@@ -36,7 +67,12 @@ macro_rules! dyn_setter {
         impl <$R:ident> $tyfamily:path = self as $self:ident {
             $(
                 $(#[$meta:meta])*
-                fn $name:ident -> $trait:path = $lhs:expr;
+                fn $name:ident -> $trait:path
+                $(,
+                    $(#[$dynmeta:meta])*
+                    fn unstable_try_as_dyn $dyn:ident
+                )?
+                = $lhs:expr;
             )*
         }
     ) => {
@@ -49,6 +85,30 @@ macro_rules! dyn_setter {
                     let $self = self;
                     $lhs = Some(lifetime_erase_trait_vtable!((&mut $self.inner): '_ as $trait));
                 }
+
+                $(
+                    #[cfg(feature = "unstable_try_as_dyn")]
+                    $(#[$dynmeta])*
+                    /// # Usage Constraints
+                    ///
+                    // The compiler requires that `T`'s impl of the trait is 'fully generic' for
+                    // downcasting in this manner. For instance this won't work for `Cursor<B>`
+                    // where the generic `B` has no bounds but the impl has `B: AsRef<[u8]>`. It's
+                    // not entirely clear how reliable a proxy around the type that agrees in both
+                    // should be and if this may get relaxed.
+                    pub fn $dyn(&mut self) -> bool {
+                        let $self = self;
+
+                        // Never delete the trait vtable if already present.
+                        if $lhs.is_some() {
+                            return true;
+                        }
+
+                        $lhs = ::core::any::try_as_dyn_mut::<_, dyn $trait + '_>(&mut $self.inner)
+                            .map(|v| lifetime_erase_trait_vtable!((&mut *v): '_ as $trait));
+                        $lhs.is_some()
+                    }
+                )*
             )*
         }
     }
