@@ -11,6 +11,7 @@
 //! not be usable, their bounds can never be met. And combining traits into a large dyn-trait is
 //! redundant as it trait-impls become part of the static validity requirement again.
 #![cfg_attr(feature = "unstable_set_ptr_value", feature(set_ptr_value))]
+#![cfg_attr(feature = "unstable_try_as_dyn", feature(try_as_dyn))]
 #![deny(missing_docs)]
 
 #[doc = include_str!("../Readme.md")]
@@ -36,7 +37,7 @@ macro_rules! dyn_setter {
         impl <$R:ident> $tyfamily:path = self as $self:ident {
             $(
                 $(#[$meta:meta])*
-                fn $name:ident -> $trait:path = $lhs:expr;
+                fn $name:ident $(dyn fn $dyn:ident)? -> $trait:path = $lhs:expr;
             )*
         }
     ) => {
@@ -49,6 +50,23 @@ macro_rules! dyn_setter {
                     let $self = self;
                     $lhs = Some(lifetime_erase_trait_vtable!((&mut $self.inner): '_ as $trait));
                 }
+
+                $(
+                    /// Setup a vtable using the unstable `try_as_dyn` operation on `T`.
+                    ///
+                    // The compiler requires that `T`'s impl of the trait is 'fully generic' for
+                    // downcasting in this manner. For instance this won't work for `Cursor<B>`
+                    // where the generic `B` has no bounds but the impl has `B: AsRef<[u8]>`. It's
+                    // not entirely clear how reliable a proxy around the type that agrees in both
+                    // should be and if this may get relaxed.
+                    #[cfg(feature = "unstable_try_as_dyn")]
+                    pub fn $dyn(&mut self) -> bool {
+                        let $self = self;
+                        $lhs = ::core::any::try_as_dyn_mut::<_, dyn $trait + '_>(&mut $self.inner)
+                            .map(|v| lifetime_erase_trait_vtable!((&mut *v): '_ as $trait));
+                        $lhs.is_some()
+                    }
+                )*
             )*
         }
     }

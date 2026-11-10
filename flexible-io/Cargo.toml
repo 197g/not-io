@@ -23,3 +23,13 @@ rust-version = "1.88"
 unstable_set_ptr_value = []
 # Alias for the other unstable feature.
 unstable_with_metadata_of = ["unstable_set_ptr_value"]
+
+# See try_as_dyn #144361 upstream. This methods do not have trait bounds at the
+# call site, either. If this lands in stable then part of this crate is
+# obsolete. However, the standard library makes no promises about the stability
+# of the returned option (i.e. that it will `Some` in all contexts for the same
+# type; or that it will be `Some` for certain modifications of a type). See the
+# runtime failures section, it needs to under approximate for soundness. This
+# retains the token aspect of the crate, it's merely a different path of
+# arriving at that token.
+unstable_try_as_dyn = []

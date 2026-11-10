@@ -164,12 +164,12 @@ dyn_setter! {
         /// Set the V-Table for [`BufRead`].
         ///
         /// After this call, the methods [`Self::as_buf`] and [`Self::as_buf_mut`] will return values.
-        fn set_buf -> BufRead = that.vtable.buf;
+        fn set_buf dyn fn try_as_buf -> BufRead = that.vtable.buf;
 
         /// Set the V-Table for [`Seek`].
         ///
         /// After this call, the methods [`Self::as_seek`] and [`Self::as_seek_mut`] will return values.
-        fn set_seek -> Seek = that.vtable.seek;
+        fn set_seek dyn fn try_as_seek -> Seek = that.vtable.seek;
 
         /// Set the V-Table for [`Any`].
         ///
